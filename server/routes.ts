@@ -28,6 +28,31 @@ import { resolveSessionUserId } from "./auth/session-user.js";
 
 const MAX_CONVERSATION_TITLE_CHARS = 120;
 const MAX_MESSAGE_CHARS = 10_000;
+const DEFAULT_PHONE_PROXY_TIMEOUT_MS = 120_000;
+
+function normalizePhoneGenerateUrl(input: string): URL | null {
+  const trimmed = input.trim();
+  if (!trimmed) return null;
+
+  try {
+    const url = new URL(trimmed);
+    if (url.protocol !== "http:" && url.protocol !== "https:") {
+      return null;
+    }
+
+    if (!url.pathname || url.pathname === "/") {
+      url.pathname = "/api/generate";
+    } else if (!url.pathname.endsWith("/api/generate")) {
+      url.pathname = `${url.pathname.replace(/\/+$/, "")}/api/generate`;
+    }
+
+    url.search = "";
+    url.hash = "";
+    return url;
+  } catch {
+    return null;
+  }
+}
 
 export async function registerRoutes(
   httpServer: Server,
@@ -203,6 +228,65 @@ export async function registerRoutes(
       count: listPromptProfiles().length,
       items: listPromptProfiles(),
     });
+  });
+
+  app.post("/api/direct-phone/generate", async (req, res) => {
+    if (isProduction && process.env.ENABLE_PHONE_PROXY !== "true") {
+      return res.status(403).json({
+        message: "Phone proxy is disabled in production",
+      });
+    }
+
+    const { baseUrl, model, prompt } = req.body ?? {};
+    if (typeof baseUrl !== "string" || !baseUrl.trim()) {
+      return res.status(400).json({ message: "baseUrl is required" });
+    }
+    if (typeof model !== "string" || !model.trim()) {
+      return res.status(400).json({ message: "model is required" });
+    }
+    if (typeof prompt !== "string" || !prompt.trim()) {
+      return res.status(400).json({ message: "prompt is required" });
+    }
+
+    const targetUrl = normalizePhoneGenerateUrl(baseUrl);
+    if (!targetUrl) {
+      return res.status(400).json({ message: "baseUrl must be a valid http/https URL" });
+    }
+
+    const controller = new AbortController();
+    const timeoutMs = Number.parseInt(process.env.PHONE_PROXY_TIMEOUT_MS ?? "", 10);
+    const resolvedTimeoutMs = Number.isFinite(timeoutMs) && timeoutMs > 0
+      ? timeoutMs
+      : DEFAULT_PHONE_PROXY_TIMEOUT_MS;
+    const timeout = setTimeout(() => controller.abort(), resolvedTimeoutMs);
+
+    try {
+      const upstreamResponse = await fetch(targetUrl, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+        },
+        body: JSON.stringify({
+          model: model.trim(),
+          prompt: prompt.trim(),
+          stream: false,
+        }),
+        signal: controller.signal,
+      });
+
+      const rawText = await upstreamResponse.text();
+      const contentType = upstreamResponse.headers.get("content-type") ?? "application/json";
+      res.status(upstreamResponse.status);
+      res.type(contentType);
+      return res.send(rawText);
+    } catch (error) {
+      const message = error instanceof Error ? error.message : "Unknown upstream error";
+      return res.status(502).json({
+        message: `Phone proxy request failed: ${message}`,
+      });
+    } finally {
+      clearTimeout(timeout);
+    }
   });
 
   app.get("/api/conversations", async (_req, res) => {

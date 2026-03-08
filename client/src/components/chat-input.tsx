@@ -59,6 +59,7 @@ export function ChatInput({
   promptProfiles = [],
 }: ChatInputProps) {
   const profiles = promptProfiles.length > 0 ? promptProfiles : FALLBACK_PROFILES;
+  const showPromptProfilePicker = profiles.length > 1;
 
   const [message, setMessage] = useState("");
   const [selectedProfileId, setSelectedProfileId] = useState(profiles[0]?.id ?? "default_balanced");
@@ -118,7 +119,7 @@ export function ChatInput({
             value={message}
             onChange={(e) => setMessage(e.target.value)}
             onKeyDown={handleKeyDown}
-            placeholder={isHero ? "بمَ تُفكر اليوم؟" : "اكتب لتبدأ النبض..."}
+            placeholder={isHero ? "بمَ تفكر اليوم؟" : "اكتب لتبدأ النبض..."}
             rows={1}
             dir="auto"
             className={cn(
@@ -148,42 +149,44 @@ export function ChatInput({
                 <Paperclip className="h-[18px] w-[18px]" strokeWidth={1.7} />
               </Button>
 
-              <DropdownMenu>
-                <DropdownMenuTrigger asChild>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    aria-label="تحديد نمط الرد"
-                    data-testid="dropdown-prompt-profile-trigger"
-                    className="h-9 gap-2 rounded-xl border-border/80 bg-background/45 px-3.5 text-sm font-semibold text-foreground/75 hover:border-primary/35 hover:bg-background/80 hover:text-foreground"
-                  >
-                    <span>{selectedProfile?.label ?? "محادثة ذكية"}</span>
-                    <ChevronDown className="h-4 w-4 opacity-55" strokeWidth={2} />
-                  </Button>
-                </DropdownMenuTrigger>
-                <DropdownMenuContent
-                  align="start"
-                  className="min-w-[220px] rounded-xl border-border/80 bg-popover/95 p-1.5 backdrop-blur-xl"
-                >
-                  {profiles.map((profile) => (
-                    <DropdownMenuItem
-                      key={profile.id}
-                      onClick={() => setSelectedProfileId(profile.id)}
-                      data-testid={`dropdown-item-profile-${profile.id}`}
-                      className={cn(
-                        "cursor-pointer rounded-lg py-2 text-sm font-medium transition-colors",
-                        selectedProfileId === profile.id &&
-                          "bg-primary/15 text-primary focus:bg-primary/20",
-                      )}
+              {showPromptProfilePicker && (
+                <DropdownMenu>
+                  <DropdownMenuTrigger asChild>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      aria-label="تحديد نمط الرد"
+                      data-testid="dropdown-prompt-profile-trigger"
+                      className="h-9 gap-2 rounded-xl border-border/80 bg-background/45 px-3.5 text-sm font-semibold text-foreground/75 hover:border-primary/35 hover:bg-background/80 hover:text-foreground"
                     >
-                      <div className="flex flex-col gap-0.5">
-                        <span>{profile.label}</span>
-                        <span className="text-[11px] text-foreground/45">{profile.description}</span>
-                      </div>
-                    </DropdownMenuItem>
-                  ))}
-                </DropdownMenuContent>
-              </DropdownMenu>
+                      <span>{selectedProfile?.label ?? "محادثة ذكية"}</span>
+                      <ChevronDown className="h-4 w-4 opacity-55" strokeWidth={2} />
+                    </Button>
+                  </DropdownMenuTrigger>
+                  <DropdownMenuContent
+                    align="start"
+                    className="min-w-[220px] rounded-xl border-border/80 bg-popover/95 p-1.5 backdrop-blur-xl"
+                  >
+                    {profiles.map((profile) => (
+                      <DropdownMenuItem
+                        key={profile.id}
+                        onClick={() => setSelectedProfileId(profile.id)}
+                        data-testid={`dropdown-item-profile-${profile.id}`}
+                        className={cn(
+                          "cursor-pointer rounded-lg py-2 text-sm font-medium transition-colors",
+                          selectedProfileId === profile.id &&
+                            "bg-primary/15 text-primary focus:bg-primary/20",
+                        )}
+                      >
+                        <div className="flex flex-col gap-0.5">
+                          <span>{profile.label}</span>
+                          <span className="text-[11px] text-foreground/45">{profile.description}</span>
+                        </div>
+                      </DropdownMenuItem>
+                    ))}
+                  </DropdownMenuContent>
+                </DropdownMenu>
+              )}
             </div>
 
             <div className="flex items-center gap-2">

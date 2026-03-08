@@ -4,9 +4,14 @@ import { Button } from "@/components/ui/button";
 interface NabdHeaderProps {
   onToggleSidebar: () => void;
   conversationTitle?: string;
+  connectionLabel?: string;
 }
 
-export function NabdHeader({ onToggleSidebar, conversationTitle }: NabdHeaderProps) {
+export function NabdHeader({
+  onToggleSidebar,
+  conversationTitle,
+  connectionLabel,
+}: NabdHeaderProps) {
   return (
     <header
       className="sticky top-0 z-30 border-b border-border/80 bg-background/88 backdrop-blur-xl"
@@ -21,8 +26,13 @@ export function NabdHeader({ onToggleSidebar, conversationTitle }: NabdHeaderPro
             </h1>
           </div>
           {conversationTitle && (
-            <span className="rork-chip truncate rounded-full px-3 py-1 text-sm font-medium max-w-[18rem]">
+            <span className="rork-chip max-w-[18rem] truncate rounded-full px-3 py-1 text-sm font-medium">
               {conversationTitle}
+            </span>
+          )}
+          {connectionLabel && (
+            <span className="truncate rounded-full border border-primary/20 bg-primary/8 px-3 py-1 text-xs font-semibold tracking-[0.12em] text-primary/80">
+              {connectionLabel}
             </span>
           )}
         </div>

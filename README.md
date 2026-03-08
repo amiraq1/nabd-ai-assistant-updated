@@ -65,6 +65,10 @@ Set the following variables before running:
 - `RAG_STORE_PATH` (optional): override persisted RAG store file path.
 - `DEBUG_API_TOKEN` (required if debug endpoints are enabled): token for debug endpoint auth.
 - `ENABLE_AI_DEBUG_ENDPOINTS` (optional): set `true` to enable debug endpoints in production.
+- `VITE_PHONE_API_BASE` (optional): when set, the frontend sends prompts directly from the browser to your phone's `/api/generate` endpoint instead of Nabd's conversation API.
+- `VITE_PHONE_MODEL` (optional): model name sent to the phone endpoint (default `tinyllama`).
+- `ENABLE_PHONE_PROXY` (optional): allows the phone proxy route in production. Development always allows it.
+- `PHONE_PROXY_TIMEOUT_MS` (optional): timeout for proxied phone requests (default `120000`).
 
 ## Development
 
@@ -76,6 +80,23 @@ npm run test
 npm run check
 npm run dev
 ```
+
+### Direct Phone Mode
+
+If your phone exposes an Ollama-compatible `POST /api/generate` endpoint, you can point the frontend at it directly:
+
+```bash
+VITE_PHONE_API_BASE=http://192.168.1.50:11434
+VITE_PHONE_MODEL=tinyllama
+```
+
+Notes:
+
+- You can set `VITE_PHONE_API_BASE` to either the base URL or the full `/api/generate` URL.
+- You can also set the phone endpoint at runtime with `?phoneApiBase=https://...&phoneModel=tinyllama`; the app stores it in `localStorage`.
+- Requests go through Nabd's local `/api/direct-phone/generate` proxy, so browser CORS on the phone endpoint is no longer required.
+- Direct phone mode now wraps prompts with stricter anti-hallucination instructions and marks lower-confidence factual answers with an accuracy warning in the UI.
+- In direct mode, chat history stays in the browser and does not use Nabd conversations or the database.
 
 ## Data Isolation
 
