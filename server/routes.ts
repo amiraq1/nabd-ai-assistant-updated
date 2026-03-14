@@ -5,6 +5,7 @@ import {
   generateAssistantReply,
   previewOrchestration,
 } from "./ai/orchestrator.js";
+import { generateUISchema } from "./ai/ui-schema.js";
 import {
   getPromptProfileById,
   listPromptProfiles,
@@ -25,10 +26,24 @@ import {
   refreshSkills,
 } from "./skills/registry.js";
 import { resolveSessionUserId } from "./auth/session-user.js";
+import { broadcastUiSchemaUpdate } from "./realtime/ui-preview.js";
+import {
+  normalizeUIComponent,
+  type UISchemaGeneratedEvent,
+  type UIComponent,
+} from "../shared/ui-schema.js";
 
 const MAX_CONVERSATION_TITLE_CHARS = 120;
 const MAX_MESSAGE_CHARS = 10_000;
+const MAX_PROJECT_NAME_CHARS = 255;
+const MAX_SCREEN_NAME_CHARS = 255;
 const DEFAULT_PHONE_PROXY_TIMEOUT_MS = 120_000;
+const UI_BUILD_REQUEST_PATTERNS = [
+  /\b(build|create|generate|design|make)\s+(a\s+)?(ui|interface|screen|page|layout|dashboard)\b/i,
+  /\b(login|landing|settings|profile|dashboard)\s+(screen|page|layout|ui)\b/i,
+  /(ابن|ابني|صمم|انشئ|أنشئ|ولد|كوّن).*(واجهة|شاشة|صفحة)/i,
+  /(واجهة|شاشة|صفحة).*(تطبيق|موقع|لوحة|دخول|تسجيل)/i,
+];
 
 function normalizePhoneGenerateUrl(input: string): URL | null {
   const trimmed = input.trim();
@@ -52,6 +67,41 @@ function normalizePhoneGenerateUrl(input: string): URL | null {
   } catch {
     return null;
   }
+}
+
+function looksLikeUiBuildRequest(content: string): boolean {
+  return UI_BUILD_REQUEST_PATTERNS.some((pattern) => pattern.test(content));
+}
+
+function buildConversationProjectName(conversationId: string, title: string): string {
+  const suffix = conversationId.replace(/[^A-Za-z0-9_-]/g, "").slice(0, 8) || "project";
+  const maxBaseLength = Math.max(MAX_PROJECT_NAME_CHARS - suffix.length - 3, 16);
+  const baseTitle = title.trim().slice(0, maxBaseLength) || "AI Builder Project";
+  return `${baseTitle} [${suffix}]`;
+}
+
+function buildScreenName(prompt: string): string {
+  const normalized = prompt.replace(/\s+/g, " ").trim();
+  if (!normalized) {
+    return "Generated Screen";
+  }
+
+  return normalized.slice(0, MAX_SCREEN_NAME_CHARS);
+}
+
+function buildUiSchemaEvent(
+  conversationId: string,
+  projectId: string,
+  screenId: string,
+  schema: UIComponent,
+): UISchemaGeneratedEvent {
+  return {
+    type: "ui-schema.generated",
+    conversationId,
+    projectId,
+    screenId,
+    schema,
+  };
 }
 
 export async function registerRoutes(
@@ -336,6 +386,39 @@ export async function registerRoutes(
     res.json(msgs);
   });
 
+  app.get("/api/conversations/:id/preview", async (req, res) => {
+    const userId = resolveSessionUserId(req, res);
+    const conversation = await storage.getConversation(req.params.id, userId);
+    if (!conversation) {
+      return res.status(404).json({ message: "ط§ظ„ظ…ط­ط§ط¯ط«ط© ط؛ظٹط± ظ…ظˆط¬ظˆط¯ط©" });
+    }
+
+    try {
+      const projectName = buildConversationProjectName(conversation.id, conversation.title);
+      const project = await storage.getProjectByName(userId, projectName);
+      if (!project) {
+        return res.json(null);
+      }
+
+      const latestScreen = await storage.getLatestProjectScreen(project.id);
+      if (!latestScreen) {
+        return res.json(null);
+      }
+
+      const normalizedSchema = normalizeUIComponent(latestScreen.uiSchema);
+      if (!normalizedSchema) {
+        return res.json(null);
+      }
+
+      return res.json(
+        buildUiSchemaEvent(conversation.id, project.id, latestScreen.id, normalizedSchema),
+      );
+    } catch (error) {
+      console.error("Failed to load latest UI preview:", error);
+      return res.json(null);
+    }
+  });
+
   app.post("/api/conversations/:id/messages", async (req, res) => {
     const userId = resolveSessionUserId(req, res);
     const { content, systemPrompt, systemPromptId } = req.body ?? {};
@@ -377,6 +460,47 @@ export async function registerRoutes(
       content: normalizedContent,
       role: "user",
     });
+
+    if (looksLikeUiBuildRequest(normalizedContent)) {
+      try {
+        await storage.ensureSessionUser(userId);
+        const projectName = buildConversationProjectName(conversation.id, conversation.title);
+        const project = await storage.ensureProject(userId, projectName, "web");
+        const schema = await generateUISchema(normalizedContent);
+        const screen = await storage.createProjectScreen({
+          projectId: project.id,
+          name: buildScreenName(normalizedContent),
+          uiSchema: schema,
+          reactCode: "",
+        });
+
+        const uiEvent = buildUiSchemaEvent(req.params.id, project.id, screen.id, schema);
+        broadcastUiSchemaUpdate(userId, uiEvent);
+
+        const aiMsg = await storage.createMessage({
+          conversationId: req.params.id,
+          content: "Generated a UI schema and pushed it to the live preview canvas.",
+          role: "assistant",
+        });
+
+        return res.json([userMsg, aiMsg]);
+      } catch (error) {
+        console.error("UI schema generation error:", error);
+
+        const message =
+          error instanceof Error
+            ? error.message
+            : "Failed to generate a valid UI schema.";
+
+        const errorMsg = await storage.createMessage({
+          conversationId: req.params.id,
+          content: `Failed to generate a valid UI schema: ${message}`,
+          role: "assistant",
+        });
+
+        return res.json([userMsg, errorMsg]);
+      }
+    }
 
     try {
       const previousMessages = await storage.getMessages(req.params.id, userId);

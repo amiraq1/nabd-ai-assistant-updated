@@ -5,9 +5,15 @@ import {
   type InsertConversation,
   type Message,
   type InsertMessage,
+  type Project,
+  type InsertProject,
+  type ProjectScreen,
+  type InsertProjectScreen,
   users,
   conversations,
   messages,
+  projects,
+  projectScreens,
 } from "../shared/schema.js";
 import { db } from "./db.js";
 import { eq, desc, and } from "drizzle-orm";
@@ -17,12 +23,18 @@ export interface IStorage {
   getUser(id: string): Promise<User | undefined>;
   getUserByUsername(username: string): Promise<User | undefined>;
   createUser(user: InsertUser): Promise<User>;
+  ensureSessionUser(userId: string): Promise<User>;
   getConversations(userId: string): Promise<Conversation[]>;
   getConversation(id: string, userId: string): Promise<Conversation | undefined>;
   createConversation(conv: InsertConversation): Promise<Conversation>;
   deleteConversation(id: string, userId: string): Promise<boolean>;
   getMessages(conversationId: string, userId: string): Promise<Message[]>;
   createMessage(msg: InsertMessage): Promise<Message>;
+  getProjectByName(userId: string, name: string): Promise<Project | undefined>;
+  createProject(project: InsertProject): Promise<Project>;
+  ensureProject(userId: string, name: string, platform: Project["platform"]): Promise<Project>;
+  createProjectScreen(screen: InsertProjectScreen): Promise<ProjectScreen>;
+  getLatestProjectScreen(projectId: string): Promise<ProjectScreen | undefined>;
 }
 
 export class DatabaseStorage implements IStorage {
@@ -39,6 +51,37 @@ export class DatabaseStorage implements IStorage {
   async createUser(insertUser: InsertUser): Promise<User> {
     const [user] = await db.insert(users).values(insertUser).returning();
     return user;
+  }
+
+  async ensureSessionUser(userId: string): Promise<User> {
+    const existing = await this.getUser(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const username = `session_${userId}`;
+    const password = randomUUID();
+
+    const [created] = await db
+      .insert(users)
+      .values({
+        id: userId,
+        username,
+        password,
+      })
+      .onConflictDoNothing()
+      .returning();
+
+    if (created) {
+      return created;
+    }
+
+    const fallback = await this.getUser(userId);
+    if (fallback) {
+      return fallback;
+    }
+
+    throw new Error("Failed to ensure a backing user row for the active session.");
   }
 
   async getConversations(userId: string): Promise<Conversation[]> {
@@ -90,12 +133,55 @@ export class DatabaseStorage implements IStorage {
     const [result] = await db.insert(messages).values(msg).returning();
     return result;
   }
+
+  async getProjectByName(userId: string, name: string): Promise<Project | undefined> {
+    const [project] = await db
+      .select()
+      .from(projects)
+      .where(and(eq(projects.userId, userId), eq(projects.name, name)))
+      .orderBy(desc(projects.createdAt));
+    return project;
+  }
+
+  async createProject(project: InsertProject): Promise<Project> {
+    const [result] = await db.insert(projects).values(project).returning();
+    return result;
+  }
+
+  async ensureProject(
+    userId: string,
+    name: string,
+    platform: Project["platform"],
+  ): Promise<Project> {
+    const existing = await this.getProjectByName(userId, name);
+    if (existing) {
+      return existing;
+    }
+
+    return this.createProject({ userId, name, platform });
+  }
+
+  async createProjectScreen(screen: InsertProjectScreen): Promise<ProjectScreen> {
+    const [result] = await db.insert(projectScreens).values(screen).returning();
+    return result;
+  }
+
+  async getLatestProjectScreen(projectId: string): Promise<ProjectScreen | undefined> {
+    const [screen] = await db
+      .select()
+      .from(projectScreens)
+      .where(eq(projectScreens.projectId, projectId))
+      .orderBy(desc(projectScreens.updatedAt));
+    return screen;
+  }
 }
 
 export class MemStorage implements IStorage {
   private users: Map<string, User> = new Map();
   private conversations: Map<string, Conversation> = new Map();
   private messages: Map<string, Message> = new Map();
+  private projects: Map<string, Project> = new Map();
+  private projectScreens: Map<string, ProjectScreen> = new Map();
 
   async getUser(id: string): Promise<User | undefined> {
     return this.users.get(id);
@@ -111,6 +197,21 @@ export class MemStorage implements IStorage {
     const id = randomUUID();
     const user: User = { ...insertUser, id };
     this.users.set(id, user);
+    return user;
+  }
+
+  async ensureSessionUser(userId: string): Promise<User> {
+    const existing = this.users.get(userId);
+    if (existing) {
+      return existing;
+    }
+
+    const user: User = {
+      id: userId,
+      username: `session_${userId}`,
+      password: randomUUID(),
+    };
+    this.users.set(userId, user);
     return user;
   }
 
@@ -170,6 +271,54 @@ export class MemStorage implements IStorage {
     };
     this.messages.set(id, message);
     return message;
+  }
+
+  async getProjectByName(userId: string, name: string): Promise<Project | undefined> {
+    return Array.from(this.projects.values())
+      .filter((project) => project.userId === userId && project.name === name)
+      .sort((a, b) => b.createdAt.getTime() - a.createdAt.getTime())[0];
+  }
+
+  async createProject(project: InsertProject): Promise<Project> {
+    const id = randomUUID();
+    const createdProject: Project = {
+      ...project,
+      id,
+      createdAt: new Date(),
+    };
+    this.projects.set(id, createdProject);
+    return createdProject;
+  }
+
+  async ensureProject(
+    userId: string,
+    name: string,
+    platform: Project["platform"],
+  ): Promise<Project> {
+    const existing = await this.getProjectByName(userId, name);
+    if (existing) {
+      return existing;
+    }
+
+    return this.createProject({ userId, name, platform });
+  }
+
+  async createProjectScreen(screen: InsertProjectScreen): Promise<ProjectScreen> {
+    const id = randomUUID();
+    const createdScreen: ProjectScreen = {
+      ...screen,
+      id,
+      reactCode: screen.reactCode ?? "",
+      updatedAt: new Date(),
+    };
+    this.projectScreens.set(id, createdScreen);
+    return createdScreen;
+  }
+
+  async getLatestProjectScreen(projectId: string): Promise<ProjectScreen | undefined> {
+    return Array.from(this.projectScreens.values())
+      .filter((screen) => screen.projectId === projectId)
+      .sort((a, b) => b.updatedAt.getTime() - a.updatedAt.getTime())[0];
   }
 }
 

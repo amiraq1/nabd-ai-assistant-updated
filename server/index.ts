@@ -4,6 +4,8 @@ import { registerRoutes } from "./routes.js";
 import { serveStatic } from "./static.js";
 import { createServer } from "http";
 import { seed } from "./seed.js";
+import { handleAppBuilderUpgrade, setupWebSocket } from "./ws-server.js";
+import { handleUiPreviewUpgrade, setupUiPreviewRealtime } from "./realtime/ui-preview.js";
 
 const app = express();
 const httpServer = createServer(app);
@@ -78,6 +80,19 @@ app.use((req, res, next) => {
 
 (async () => {
   await seed().catch((err) => console.error("Seed error:", err));
+  setupWebSocket();
+  setupUiPreviewRealtime();
+
+  httpServer.on("upgrade", (request, socket, head) => {
+    if (handleAppBuilderUpgrade(request, socket, head)) {
+      return;
+    }
+
+    if (handleUiPreviewUpgrade(request, socket, head)) {
+      return;
+    }
+  });
+
   await registerRoutes(httpServer, app);
 
   app.use((err: any, _req: Request, res: Response, next: NextFunction) => {

@@ -8,6 +8,7 @@ import { nanoid } from "nanoid";
 
 const viteLogger = createLogger();
 const VITE_DEV_CACHE_PREFIX = ".vite-dev-cache-";
+const VITE_HMR_PORT = Number.parseInt(process.env.VITE_HMR_PORT ?? "24678", 10);
 
 export async function setupVite(server: Server, app: Express) {
   const nodeModulesDir = path.resolve(import.meta.dirname, "..", "node_modules");
@@ -34,7 +35,11 @@ export async function setupVite(server: Server, app: Express) {
 
   const serverOptions = {
     middlewareMode: true,
-    hmr: { server, path: "/vite-hmr" },
+    hmr: {
+      port: VITE_HMR_PORT,
+      clientPort: VITE_HMR_PORT,
+      path: "/vite-hmr",
+    },
     allowedHosts: true as const,
   };
 
