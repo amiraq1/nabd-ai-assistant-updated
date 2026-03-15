@@ -3,27 +3,24 @@ import { PageAgent } from 'page-agent';
 
 const PageAgentIntegration = () => {
   useEffect(() => {
-    // تهيئة PageAgent عند تحميل المكون
-    // ملاحظة: يجب توفير apiKey و baseURL بشكل صحيح في الإنتاج
+    // تهيئة PageAgent باستخدام Nvidia API
+    // ملاحظة: تأكد من تعيين VITE_NVIDIA_API_KEY في ملف .env الخاص بك
     const agent = new PageAgent({
-      model: 'gpt-4o', // أو أي موديل مدعوم
-      baseURL: 'https://api.openai.com/v1',
-      apiKey: import.meta.env.VITE_OPENAI_API_KEY || '', 
+      model: 'meta/llama-3.1-405b-instruct', // يمكنك تغيير الموديل حسب المتاح في Nvidia NIM
+      baseURL: 'https://integrate.api.nvidia.com/v1',
+      apiKey: import.meta.env.VITE_NVIDIA_API_KEY || '', 
       language: 'ar-SA'
     });
 
-    // إظهار لوحة التحكم الخاصة بالعامل
-    // agent.panel.show();
-
-    // يمكن أيضاً تنفيذ أوامر برمجية إذا لزم الأمر
-    // agent.execute('لخص الصفحة');
+    // إظهار لوحة التحكم الخاصة بالعامل تلقائياً
+    agent.panel.show();
 
     return () => {
-      // تنظيف إذا لزم الأمر عند إلغاء تحميل المكون
+      // تنظيف إذا لزم الأمر
     };
   }, []);
 
-  return null; // هذا المكون لا يحتاج لعرض أي شيء بنفسه لأنه يستخدم لوحة تحكم المكتبة
+  return null;
 };
 
 export default PageAgentIntegration;
