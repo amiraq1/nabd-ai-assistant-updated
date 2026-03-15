@@ -6,6 +6,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import NotFound from "@/pages/not-found";
 import Home from "@/pages/home";
 import UserPage from "@/pages/user";
+import PageAgentIntegration from "@/components/PageAgentIntegration";
 
 function Router() {
   return (
@@ -23,6 +24,7 @@ function App() {
       <TooltipProvider>
         <div className="dark">
           <Toaster />
+          <PageAgentIntegration />
           <Router />
         </div>
       </TooltipProvider>
